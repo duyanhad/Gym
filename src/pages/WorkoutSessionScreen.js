@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import Card from '../components/Card';
@@ -6,6 +7,21 @@ import { colors, spacing } from '../constants/theme';
 import { useWorkout } from '../contexts/WorkoutContext';
 import AppLayout from '../layouts/AppLayout';
 import { formatDateKey } from '../utils/date';
+
+function formatDuration(milliseconds) {
+  const totalSeconds = Math.max(0, Math.floor(milliseconds / 1000));
+  const hours = String(Math.floor(totalSeconds / 3600)).padStart(2, '0');
+  const minutes = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, '0');
+  const seconds = String(totalSeconds % 60).padStart(2, '0');
+
+  return `${hours}:${minutes}:${seconds}`;
+}
+
+function formatClockTime(isoString) {
+  const date = new Date(isoString);
+
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+}
 
 export default function WorkoutSessionScreen({ navigation, route }) {
   const { dateKey } = route.params;
@@ -18,7 +34,31 @@ export default function WorkoutSessionScreen({ navigation, route }) {
     toggleWorkoutDay,
     isWorkoutDay,
     weekdayLabel,
+    sessionOf,
+    startSession,
+    finishSession,
+    resetSession,
   } = useWorkout();
+
+  const [nowTick, setNowTick] = useState(Date.now());
+
+  const session = sessionOf(dateKey);
+  const startedAt = session.startedAt ? new Date(session.startedAt) : null;
+  const finishedAt = session.finishedAt ? new Date(session.finishedAt) : null;
+  const inProgress = Boolean(startedAt && !finishedAt);
+
+  // Đồng hồ đếm thời gian tập khi buổi tập đang diễn ra
+  useEffect(() => {
+    if (!inProgress) return undefined;
+
+    const timer = setInterval(() => setNowTick(Date.now()), 1000);
+
+    return () => clearInterval(timer);
+  }, [inProgress]);
+
+  const elapsedMs = startedAt
+    ? (finishedAt ?? new Date(nowTick)).getTime() - startedAt.getTime()
+    : 0;
 
   const weekday = new Date(`${dateKey}T00:00:00`).getDay();
   const primaryPlan = planById(weekPlan[weekday]);
@@ -53,6 +93,83 @@ export default function WorkoutSessionScreen({ navigation, route }) {
           {primaryPlan?.note ? <Text style={styles.headerNote}>{primaryPlan.note}</Text> : null}
         </Card>
 
+        <Card style={styles.clockCard}>
+          <View style={styles.clockHeader}>
+            <Text style={styles.sectionTitle}>THỜI GIAN TẬP</Text>
+            <View
+              style={[
+                styles.statusPill,
+                inProgress ? styles.statusLive : finishedAt ? styles.statusOk : styles.statusIdle,
+              ]}
+            >
+              <Text
+                testID="session-status"
+                style={[
+                  styles.statusText,
+                  inProgress ? styles.statusTextLive : finishedAt ? styles.statusTextOk : styles.statusTextIdle,
+                ]}
+              >
+                {inProgress ? 'ĐANG TẬP' : finishedAt ? 'ĐÃ KẾT THÚC' : 'CHƯA BẮT ĐẦU'}
+              </Text>
+            </View>
+          </View>
+
+          <Text testID="session-timer" style={styles.clockValue}>
+            {formatDuration(elapsedMs)}
+          </Text>
+
+          <Text style={styles.clockMeta}>
+            {startedAt ? `Bắt đầu ${formatClockTime(session.startedAt)}` : 'Bấm nút bên dưới để bắt đầu tính giờ'}
+            {finishedAt ? ` · Kết thúc ${formatClockTime(session.finishedAt)}` : ''}
+          </Text>
+
+          {inProgress ? (
+            <View style={styles.clockActions}>
+              <Pressable
+                testID="session-finish"
+                accessibilityRole="button"
+                accessibilityLabel="Kết thúc buổi tập"
+                onPress={() => finishSession(dateKey)}
+                style={({ pressed }) => [styles.finishButton, pressed && styles.pressed]}
+              >
+                <Ionicons name="stop" size={18} color={colors.background} />
+                <Text style={styles.finishLabel}>KẾT THÚC BUỔI TẬP</Text>
+              </Pressable>
+
+              <Pressable
+                testID="session-restart"
+                accessibilityRole="button"
+                accessibilityLabel="Bắt đầu lại buổi tập"
+                onPress={() => {
+                  resetSession(dateKey);
+                  startSession(dateKey);
+                }}
+                style={({ pressed }) => [styles.ghostButton, pressed && styles.pressed]}
+              >
+                <Ionicons name="refresh-outline" size={18} color={colors.accent} />
+                <Text style={styles.ghostLabel}>BẮT ĐẦU LẠI</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <Pressable
+              testID="session-start"
+              accessibilityRole="button"
+              accessibilityLabel={finishedAt ? 'Bắt đầu buổi tập mới' : 'Bắt đầu buổi tập'}
+              onPress={() => {
+                resetSession(dateKey);
+                startSession(dateKey);
+                setNowTick(Date.now());
+              }}
+              style={({ pressed }) => [styles.startButton, pressed && styles.pressed]}
+            >
+              <Ionicons name="play" size={18} color={colors.background} />
+              <Text style={styles.startLabel}>
+                {finishedAt ? 'BẮT ĐẦU BUỔI TẬP MỚI' : 'BẮT ĐẦU BUỔI TẬP'}
+              </Text>
+            </Pressable>
+          )}
+        </Card>
+
         {items.length === 0 ? (
           <Card testID="session-empty" style={styles.emptyCard}>
             <Ionicons name="calendar-outline" size={26} color={colors.dim} />
@@ -70,17 +187,6 @@ export default function WorkoutSessionScreen({ navigation, route }) {
             >
               <Ionicons name="calendar-number-outline" size={18} color={colors.background} />
               <Text style={styles.primaryLabel}>THIẾT LẬP LỊCH TUẦN</Text>
-            </Pressable>
-
-            <Pressable
-              testID="session-home"
-              accessibilityRole="button"
-              accessibilityLabel="Về trang chủ"
-              onPress={() => navigation.popTo('Tabs', { screen: 'Dashboard' })}
-              style={({ pressed }) => [styles.ghostButton, pressed && styles.pressed]}
-            >
-              <Ionicons name="home-outline" size={18} color={colors.accent} />
-              <Text style={styles.ghostLabel}>VỀ TRANG CHỦ</Text>
             </Pressable>
           </Card>
         ) : (
@@ -183,17 +289,6 @@ export default function WorkoutSessionScreen({ navigation, route }) {
             </View>
 
             <Pressable
-              testID="session-back-to-schedule"
-              accessibilityRole="button"
-              accessibilityLabel="Về lịch tập"
-              onPress={() => navigation.popTo('Tabs', { screen: 'Schedule' })}
-              style={({ pressed }) => [styles.ghostButton, pressed && styles.pressed]}
-            >
-              <Ionicons name="calendar-outline" size={18} color={colors.accent} />
-              <Text style={styles.ghostLabel}>VỀ LỊCH TẬP</Text>
-            </Pressable>
-
-            <Pressable
               testID="session-toggle-day"
               accessibilityRole="button"
               accessibilityLabel={isWorkoutDay(dateKey) ? 'Bỏ đánh dấu ngày tập' : 'Đánh dấu đây là ngày tập'}
@@ -207,6 +302,28 @@ export default function WorkoutSessionScreen({ navigation, route }) {
             </Pressable>
           </>
         )}
+
+        <Pressable
+          testID="session-back-to-schedule"
+          accessibilityRole="button"
+          accessibilityLabel="Về lịch tập"
+          onPress={() => navigation.popTo('Tabs', { screen: 'Schedule' })}
+          style={({ pressed }) => [styles.ghostButton, pressed && styles.pressed]}
+        >
+          <Ionicons name="calendar-outline" size={18} color={colors.accent} />
+          <Text style={styles.ghostLabel}>VỀ LỊCH TẬP</Text>
+        </Pressable>
+
+        <Pressable
+          testID="session-home"
+          accessibilityRole="button"
+          accessibilityLabel="Về trang chủ"
+          onPress={() => navigation.popTo('Tabs', { screen: 'Dashboard' })}
+          style={({ pressed }) => [styles.ghostButton, pressed && styles.pressed]}
+        >
+          <Ionicons name="home-outline" size={18} color={colors.accent} />
+          <Text style={styles.ghostLabel}>VỀ TRANG CHỦ</Text>
+        </Pressable>
       </ScrollView>
     </AppLayout>
   );
@@ -260,6 +377,75 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 18,
     marginTop: 6,
+  },
+  clockCard: {
+    marginBottom: 14,
+  },
+  clockHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  clockValue: {
+    color: colors.text,
+    fontSize: 40,
+    fontWeight: '900',
+    letterSpacing: 2,
+    marginTop: 10,
+  },
+  clockMeta: {
+    color: colors.muted,
+    fontSize: 12,
+    marginTop: 6,
+  },
+  clockActions: {
+    gap: 4,
+  },
+  statusLive: {
+    backgroundColor: colors.accentSoft,
+    borderColor: 'rgba(198, 241, 53, 0.45)',
+  },
+  statusIdle: {
+    backgroundColor: colors.surfaceAlt,
+    borderColor: colors.inputBorder,
+  },
+  statusTextLive: {
+    color: colors.accent,
+  },
+  statusTextIdle: {
+    color: colors.dim,
+  },
+  startButton: {
+    alignItems: 'center',
+    backgroundColor: colors.accent,
+    borderRadius: 14,
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'center',
+    marginTop: 16,
+    paddingVertical: 15,
+  },
+  startLabel: {
+    color: colors.background,
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 1.1,
+  },
+  finishButton: {
+    alignItems: 'center',
+    backgroundColor: colors.success,
+    borderRadius: 14,
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'center',
+    marginTop: 16,
+    paddingVertical: 15,
+  },
+  finishLabel: {
+    color: colors.background,
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 1.1,
   },
   progressCard: {
     marginBottom: 16,

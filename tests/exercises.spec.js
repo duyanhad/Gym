@@ -32,7 +32,7 @@ test('xoá một bài tập khỏi danh sách', async ({ page }) => {
 });
 
 test('thêm bài tập mới thì xuất hiện trong danh sách', async ({ page }) => {
-  await page.getByTestId('bottom-tab-AddExercise').click();
+  await page.getByTestId('goto-add-exercise').click();
   await expect(page.getByTestId('add-exercise-screen')).toBeVisible();
 
   await page.getByTestId('exercise-save').click();

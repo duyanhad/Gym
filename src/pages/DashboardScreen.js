@@ -62,7 +62,7 @@ export default function DashboardScreen({ navigation }) {
   ];
 
   return (
-    <TabScreenLayout testID="dashboard-screen" style={styles.page}>
+    <TabScreenLayout testID="dashboard-screen" style={styles.page} showSessionBar={false}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
           <View style={styles.headerText}>

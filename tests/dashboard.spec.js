@@ -17,9 +17,11 @@ test('hiển thị dashboard với thống kê và 5 mục điều hướng', as
   await expect(page.getByTestId('stat-exercises')).toBeVisible();
   await expect(page.getByTestId('stat-connections')).toBeVisible();
 
-  for (const tab of ['Schedule', 'Exercises', 'AddExercise', 'Share', 'Settings']) {
+  for (const tab of ['Schedule', 'Exercises', 'Share', 'Settings']) {
     await expect(page.getByTestId(`bottom-tab-${tab}`)).toBeVisible();
   }
+
+  await expect(page.getByTestId('quick-action-fab')).toBeVisible();
 });
 
 test('đánh dấu và bỏ đánh dấu buổi tập hôm nay', async ({ page }) => {

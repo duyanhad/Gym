@@ -147,7 +147,7 @@ export function WorkoutProvider({ children }) {
         completedList.delete(exerciseName);
       }
 
-      return { ...current, [dateKey]: { completed: [...completedList] } };
+      return { ...current, [dateKey]: { ...log, completed: [...completedList] } };
     });
 
     // Hoàn thành bài đầu tiên => ngày đó được tính là ngày tập
@@ -155,6 +155,35 @@ export function WorkoutProvider({ children }) {
     if (completed) {
       setWorkoutDays((current) => new Set(current).add(dateKey));
     }
+  }, []);
+
+  /** Bắt đầu buổi tập: ghi lại thời điểm bắt đầu để đếm thời gian tập. */
+  const startSession = useCallback((dateKey) => {
+    setWorkoutLogs((current) => {
+      const log = current[dateKey] ?? { completed: [] };
+
+      return { ...current, [dateKey]: { ...log, startedAt: new Date().toISOString(), finishedAt: null } };
+    });
+  }, []);
+
+  /** Kết thúc buổi tập: lưu thời điểm kết thúc (giữ nguyên các bài đã đạt). */
+  const finishSession = useCallback((dateKey) => {
+    setWorkoutLogs((current) => {
+      const log = current[dateKey] ?? { completed: [] };
+
+      return { ...current, [dateKey]: { ...log, finishedAt: new Date().toISOString() } };
+    });
+
+    setWorkoutDays((current) => new Set(current).add(dateKey));
+  }, []);
+
+  /** Bỏ trạng thái bắt đầu/kết thúc, giữ lại các bài đã đánh dấu đạt. */
+  const resetSession = useCallback((dateKey) => {
+    setWorkoutLogs((current) => {
+      const log = current[dateKey] ?? { completed: [] };
+
+      return { ...current, [dateKey]: { completed: log.completed ?? [] } };
+    });
   }, []);
 
   const inviteConnection = useCallback((query) => {
@@ -283,6 +312,15 @@ export function WorkoutProvider({ children }) {
 
   const completedForDate = useCallback((dateKey) => workoutLogs[dateKey]?.completed ?? [], [workoutLogs]);
 
+  const sessionOf = useCallback(
+    (dateKey) => ({
+      startedAt: workoutLogs[dateKey]?.startedAt ?? null,
+      finishedAt: workoutLogs[dateKey]?.finishedAt ?? null,
+      completed: workoutLogs[dateKey]?.completed ?? [],
+    }),
+    [workoutLogs],
+  );
+
   const isWorkoutDay = useCallback((dateKey) => workoutDays.has(dateKey), [workoutDays]);
 
   const stats = useMemo(() => {
@@ -350,7 +388,11 @@ export function WorkoutProvider({ children }) {
       planById,
       composePlanItemsForDate,
       completedForDate,
+      sessionOf,
       setWorkoutItemCompleted,
+      startSession,
+      finishSession,
+      resetSession,
       weekdayLabel: (weekday) => WEEKDAY_FULL_LABELS[weekday],
     }),
     [
@@ -377,7 +419,11 @@ export function WorkoutProvider({ children }) {
       planById,
       composePlanItemsForDate,
       completedForDate,
+      sessionOf,
       setWorkoutItemCompleted,
+      startSession,
+      finishSession,
+      resetSession,
     ],
   );
 
