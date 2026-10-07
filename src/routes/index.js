@@ -1,12 +1,16 @@
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 import HomeScreen from '../pages/HomeScreen';
+import LoginScreen from '../pages/LoginScreen';
 import WorkoutScreen from '../pages/WorkoutScreen';
 import { colors } from '../constants/theme';
+import { useAuth } from '../contexts/AuthContext';
 
 const Stack = createNativeStackNavigator();
 
 export default function AppNavigator() {
+  const { isAuthenticated } = useAuth();
+
   return (
     <Stack.Navigator
       screenOptions={{
@@ -16,16 +20,26 @@ export default function AppNavigator() {
         contentStyle: { backgroundColor: colors.background },
       }}
     >
-      <Stack.Screen
-        name="Home"
-        component={HomeScreen}
-        options={{ title: 'GYM', headerShown: false }}
-      />
-      <Stack.Screen
-        name="Workout"
-        component={WorkoutScreen}
-        options={{ title: 'Buổi tập hôm nay' }}
-      />
+      {isAuthenticated ? (
+        <>
+          <Stack.Screen
+            name="Home"
+            component={HomeScreen}
+            options={{ title: 'GYM', headerShown: false }}
+          />
+          <Stack.Screen
+            name="Workout"
+            component={WorkoutScreen}
+            options={{ title: 'Buổi tập hôm nay' }}
+          />
+        </>
+      ) : (
+        <Stack.Screen
+          name="Login"
+          component={LoginScreen}
+          options={{ headerShown: false }}
+        />
+      )}
     </Stack.Navigator>
   );
 }

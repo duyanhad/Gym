@@ -1,15 +1,31 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import PrimaryButton from '../components/PrimaryButton';
 import { colors } from '../constants/theme';
+import { useAuth } from '../contexts/AuthContext';
 import AppLayout from '../layouts/AppLayout';
 
 export default function HomeScreen({ navigation }) {
+  const { user, signOut } = useAuth();
+
   return (
     <AppLayout style={styles.page}>
       <View style={styles.header}>
         <Text style={styles.brand}>GYM<Text style={styles.period}>.</Text></Text>
-        <Text style={styles.date}>BẮT ĐẦU HÔM NAY</Text>
+        <View style={styles.account}>
+          <Text numberOfLines={1} style={styles.date}>
+            {user?.fullName ? user.fullName.toUpperCase() : 'BẮT ĐẦU HÔM NAY'}
+          </Text>
+          <Pressable
+            testID="logout-button"
+            accessibilityRole="button"
+            accessibilityLabel="Đăng xuất"
+            onPress={signOut}
+            style={({ pressed }) => [styles.logout, pressed && styles.logoutPressed]}
+          >
+            <Text style={styles.logoutLabel}>THOÁT</Text>
+          </Pressable>
+        </View>
       </View>
 
       <View style={styles.content}>
@@ -59,6 +75,28 @@ const styles = StyleSheet.create({
     color: colors.muted,
     fontSize: 10,
     fontWeight: '700',
+    letterSpacing: 1.4,
+    maxWidth: 160,
+    textAlign: 'right',
+  },
+  account: {
+    alignItems: 'flex-end',
+    gap: 6,
+  },
+  logout: {
+    borderColor: '#2C3441',
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+  },
+  logoutPressed: {
+    borderColor: colors.accent,
+  },
+  logoutLabel: {
+    color: colors.accent,
+    fontSize: 9,
+    fontWeight: '800',
     letterSpacing: 1.4,
   },
   content: {
