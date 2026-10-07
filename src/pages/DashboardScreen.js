@@ -33,12 +33,26 @@ function buildRecentDays() {
 
 export default function DashboardScreen({ navigation }) {
   const { user, signOut } = useAuth();
-  const { stats, isWorkoutDay, toggleWorkoutDay, logWorkoutToday, workoutDays, exercises, connections } = useWorkout();
+  const {
+    stats,
+    isWorkoutDay,
+    toggleWorkoutDay,
+    logWorkoutToday,
+    workoutDays,
+    exercises,
+    connections,
+    upcomingDateKeys,
+    composePlanItemsForDate,
+    completedForDate,
+    weekPlan,
+    planById,
+  } = useWorkout();
 
   const todayKey = toDateKey(new Date());
   const trainedToday = isWorkoutDay(todayKey);
   const recentDays = buildRecentDays();
   const recentWorkoutDays = [...workoutDays].sort().reverse().slice(0, 4);
+  const upcomingSessions = upcomingDateKeys.slice(0, 3);
 
   const statTiles = [
     { key: 'streak', icon: 'flame-outline', label: 'Chuỗi ngày tập', value: `${stats.streak} ngày`, testID: 'stat-streak' },
@@ -153,6 +167,59 @@ export default function DashboardScreen({ navigation }) {
           </View>
 
           <Text style={styles.legend}>Chấm sáng = ngày bạn đã đánh dấu đi tập.</Text>
+        </Card>
+
+        <Card style={styles.recentCard}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>BUỔI TẬP SẮP TỚI</Text>
+            <Pressable
+              testID="dashboard-open-weekly"
+              accessibilityRole="button"
+              accessibilityLabel="Thiết lập lịch tuần"
+              onPress={() => navigation.navigate('WeeklyPlan')}
+              style={({ pressed }) => [styles.linkButton, pressed && styles.pressed]}
+            >
+              <Text style={styles.linkLabel}>Lịch tuần</Text>
+              <Ionicons name="chevron-forward" size={14} color={colors.accent} />
+            </Pressable>
+          </View>
+
+          {upcomingSessions.length === 0 ? (
+            <Text style={styles.empty}>Bạn chưa xếp buổi tập nào cho tuần này.</Text>
+          ) : (
+            upcomingSessions.map((dateKey) => {
+              const items = composePlanItemsForDate(dateKey);
+              const done = completedForDate(dateKey).length;
+              const weekday = new Date(`${dateKey}T00:00:00`).getDay();
+              const plan = planById(weekPlan[weekday]);
+
+              return (
+                <Pressable
+                  key={dateKey}
+                  testID={`dashboard-session-${dateKey}`}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Xem chi tiết buổi tập ${formatDateKey(dateKey)}`}
+                  onPress={() => navigation.navigate('WorkoutSession', { dateKey, title: 'Chi tiết buổi tập' })}
+                  style={({ pressed }) => [styles.upcomingRow, pressed && styles.pressed]}
+                >
+                  <View style={styles.recentIcon}>
+                    <Ionicons name="barbell-outline" size={16} color={colors.accent} />
+                  </View>
+
+                  <View style={styles.upcomingText}>
+                    <Text numberOfLines={1} style={styles.upcomingTitle}>
+                      {plan?.name ?? 'Buổi tập'}
+                    </Text>
+                    <Text style={styles.upcomingMeta}>
+                      {formatDateKey(dateKey)} · {done}/{items.length} bài
+                    </Text>
+                  </View>
+
+                  <Ionicons name="chevron-forward" size={16} color={colors.dim} />
+                </Pressable>
+              );
+            })
+          )}
         </Card>
 
         <Card style={styles.recentCard}>
@@ -394,6 +461,27 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 13,
     fontWeight: '700',
+  },
+  upcomingRow: {
+    alignItems: 'center',
+    borderTopColor: '#232A34',
+    borderTopWidth: 1,
+    flexDirection: 'row',
+    gap: 12,
+    paddingVertical: 12,
+  },
+  upcomingText: {
+    flex: 1,
+  },
+  upcomingTitle: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  upcomingMeta: {
+    color: colors.muted,
+    fontSize: 11,
+    marginTop: 3,
   },
   empty: {
     color: colors.muted,

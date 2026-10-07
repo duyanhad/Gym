@@ -4,6 +4,8 @@ import MainTabs from './MainTabs';
 import { colors } from '../constants/theme';
 import { useAuth } from '../contexts/AuthContext';
 import LoginScreen from '../pages/LoginScreen';
+import WeeklyPlanScreen from '../pages/WeeklyPlanScreen';
+import WorkoutSessionScreen from '../pages/WorkoutSessionScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -21,7 +23,19 @@ export default function AppNavigator() {
       }}
     >
       {isAuthenticated ? (
-        <Stack.Screen name="Tabs" component={MainTabs} options={{ headerShown: false }} />
+        <>
+          <Stack.Screen name="Tabs" component={MainTabs} options={{ headerShown: false }} />
+          <Stack.Screen
+            name="WorkoutSession"
+            component={WorkoutSessionScreen}
+            options={({ route }) => ({ title: route.params?.title ?? 'Chi tiết buổi tập' })}
+          />
+          <Stack.Screen
+            name="WeeklyPlan"
+            component={WeeklyPlanScreen}
+            options={{ title: 'Thiết lập lịch tuần' }}
+          />
+        </>
       ) : (
         <Stack.Screen name="Login" component={LoginScreen} options={{ headerShown: false }} />
       )}

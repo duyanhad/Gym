@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useMemo, useState } from 'react';
 
+import { DEFAULT_WEEK_PLAN, WEEKDAY_FULL_LABELS, WORKOUT_TEMPLATES } from '../constants/workoutTemplates';
 import { toDateKey } from '../utils/date';
 
 export const MUSCLE_GROUPS = ['Ngực', 'Lưng', 'Chân', 'Vai', 'Tay', 'Bụng', 'Cardio'];
@@ -36,10 +37,41 @@ function buildDemoWorkoutDays() {
   return days;
 }
 
+function cloneTemplates() {
+  return WORKOUT_TEMPLATES.map((template) => ({
+    ...template,
+    items: template.items.map((item) => ({ ...item })),
+  }));
+}
+
+/** Gộp nhiều buổi tập thành 1 danh sách bài tập (trùng tên thì giữ mục tiêu cao hơn). */
+export function mergePlanItems(plans) {
+  const merged = new Map();
+
+  plans.filter(Boolean).forEach((plan) => {
+    plan.items.forEach((item) => {
+      const current = merged.get(item.exerciseName);
+
+      if (!current) {
+        merged.set(item.exerciseName, { ...item });
+        return;
+      }
+
+      merged.set(item.exerciseName, {
+        ...current,
+        targetSets: Math.max(current.targetSets, item.targetSets),
+        targetReps: Math.max(current.targetReps, item.targetReps),
+      });
+    });
+  });
+
+  return [...merged.values()];
+}
+
 const WorkoutContext = createContext(null);
 
 /**
- * Store bài tập / lịch tập / kết nối chia sẻ.
+ * Store bài tập / giáo án / lịch tuần / kết nối chia sẻ.
  *
  * Hiện lưu trong bộ nhớ ứng dụng (mất khi tải lại trang). Khi backend có API tương ứng,
  * chỉ cần thay phần state bằng lời gọi API trong `src/services` — phần UI không phải sửa.
@@ -49,8 +81,20 @@ export function WorkoutProvider({ children }) {
   const [workoutDays, setWorkoutDays] = useState(() => buildDemoWorkoutDays());
   const [connections, setConnections] = useState(DEFAULT_CONNECTIONS);
   const [sharedWorkouts, setSharedWorkouts] = useState([
-    { id: 'sh-1', exerciseId: 'ex-2', exerciseName: 'Squat', connectionId: 'cn-1', connectionName: 'Lê Văn Huấn Luyện', sharedAt: new Date(Date.now() - 86400000).toISOString() },
+    {
+      id: 'sh-1',
+      exerciseId: 'ex-2',
+      exerciseName: 'Squat',
+      connectionId: 'cn-1',
+      connectionName: 'Lê Văn Huấn Luyện',
+      sharedAt: new Date(Date.now() - 86400000).toISOString(),
+    },
   ]);
+
+  // Giáo án (buổi tập) lấy từ tài liệu có sẵn, người dùng có thể tự tạo thêm
+  const [plans, setPlans] = useState(() => cloneTemplates());
+  const [weekPlan, setWeekPlan] = useState(() => ({ ...DEFAULT_WEEK_PLAN }));
+  const [workoutLogs, setWorkoutLogs] = useState({});
 
   const addExercise = useCallback((draft) => {
     const exercise = {
@@ -91,6 +135,28 @@ export function WorkoutProvider({ children }) {
     setWorkoutDays((current) => new Set(current).add(toDateKey(new Date())));
   }, []);
 
+  /** Đánh dấu hoàn thành / bỏ hoàn thành một bài tập trong buổi của ngày. */
+  const setWorkoutItemCompleted = useCallback((dateKey, exerciseName, completed) => {
+    setWorkoutLogs((current) => {
+      const log = current[dateKey] ?? { completed: [] };
+      const completedList = new Set(log.completed);
+
+      if (completed) {
+        completedList.add(exerciseName);
+      } else {
+        completedList.delete(exerciseName);
+      }
+
+      return { ...current, [dateKey]: { completed: [...completedList] } };
+    });
+
+    // Hoàn thành bài đầu tiên => ngày đó được tính là ngày tập
+    // (chỉ bỏ đánh dấu khi người dùng tự bỏ ở lịch / chi tiết buổi tập)
+    if (completed) {
+      setWorkoutDays((current) => new Set(current).add(dateKey));
+    }
+  }, []);
+
   const inviteConnection = useCallback((query) => {
     const handle = query.trim();
     let created = null;
@@ -100,13 +166,7 @@ export function WorkoutProvider({ children }) {
         return current;
       }
 
-      created = {
-        id: `cn-${Date.now()}`,
-        name: handle.includes('@') ? handle : handle,
-        handle,
-        status: 'PENDING',
-        role: '',
-      };
+      created = { id: `cn-${Date.now()}`, name: handle, handle, status: 'PENDING', role: '' };
 
       return [...current, created];
     });
@@ -143,17 +203,95 @@ export function WorkoutProvider({ children }) {
     [exercises, connections],
   );
 
+  // ===================== GIÁO ÁN & LỊCH TUẦN =====================
+
+  /** Lưu một buổi tập tự soạn vào thư viện giáo án. */
+  const savePlan = useCallback((draft) => {
+    const plan = {
+      id: `plan-${Date.now()}`,
+      name: draft.name.trim(),
+      focus: draft.focus?.trim() ?? '',
+      note: draft.note?.trim() ?? '',
+      items: draft.items.map((item) => ({
+        exerciseName: item.exerciseName,
+        targetSets: Number(item.targetSets) || 1,
+        targetReps: Number(item.targetReps) || 1,
+      })),
+    };
+
+    setPlans((current) => [plan, ...current]);
+
+    return plan;
+  }, []);
+
+  const deletePlan = useCallback((planId) => {
+    setPlans((current) => current.filter((plan) => plan.id !== planId));
+    setWeekPlan((current) => {
+      const next = { ...current };
+
+      Object.keys(next).forEach((weekday) => {
+        if (next[weekday] === planId) next[weekday] = null;
+      });
+
+      return next;
+    });
+  }, []);
+
+  /** Gán (hoặc bỏ gán) buổi tập cho một thứ trong tuần. */
+  const assignPlanToWeekday = useCallback((weekday, planId) => {
+    setWeekPlan((current) => ({ ...current, [weekday]: planId }));
+  }, []);
+
+  const planById = useCallback((planId) => plans.find((plan) => plan.id === planId) ?? null, [plans]);
+
+  /** 8 ngày sắp tới (kể cả hôm nay) có buổi tập theo lịch tuần. */
+  const upcomingDateKeys = useMemo(() => {
+    const hasAnyPlan = Object.values(weekPlan).some(Boolean);
+    if (!hasAnyPlan) return [];
+
+    const days = [];
+    const today = new Date();
+
+    for (let offset = 0; offset < 8; offset += 1) {
+      const date = new Date(today);
+      date.setDate(today.getDate() + offset);
+
+      if (weekPlan[date.getDay()]) days.push(toDateKey(date));
+    }
+
+    return days;
+  }, [weekPlan]);
+
+  /**
+   * Bài tập cần tập của một ngày: lấy buổi tập gần nhất trước đó,
+   * gom luôn buổi liền trước nếu 2 buổi sát nhau (để đủ thời gian hồi phục).
+   */
+  const composePlanItemsForDate = useCallback(
+    (dateKey) => {
+      const index = upcomingDateKeys.indexOf(dateKey);
+      if (index === -1) return [];
+
+      const plansOfDay = (key) => planById(weekPlan[new Date(`${key}T00:00:00`).getDay()]);
+
+      const primary = plansOfDay(dateKey);
+      const previous = index > 0 ? plansOfDay(upcomingDateKeys[index - 1]) : null;
+
+      return mergePlanItems([primary, previous]);
+    },
+    [planById, upcomingDateKeys, weekPlan],
+  );
+
+  const completedForDate = useCallback((dateKey) => workoutLogs[dateKey]?.completed ?? [], [workoutLogs]);
+
   const isWorkoutDay = useCallback((dateKey) => workoutDays.has(dateKey), [workoutDays]);
 
   const stats = useMemo(() => {
     const today = new Date();
     const monthPrefix = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
-    const monthCount = [...workoutDays].filter((key) => key.startsWith(monthPrefix)).length;
 
     let streak = 0;
     const cursor = new Date(today);
 
-    // Chuỗi ngày tập liên tiếp tính lùi từ hôm nay (hoặc từ hôm qua nếu hôm nay chưa tập)
     if (!workoutDays.has(toDateKey(cursor))) {
       cursor.setDate(cursor.getDate() - 1);
     }
@@ -163,14 +301,29 @@ export function WorkoutProvider({ children }) {
       cursor.setDate(cursor.getDate() - 1);
     }
 
+    const loggedDays = Object.keys(workoutLogs).filter((key) => (workoutLogs[key].completed ?? []).length > 0);
+
+    const completionRate = loggedDays.length === 0
+      ? 0
+      : Math.round(
+          (loggedDays.reduce((total, key) => {
+            const planned = composePlanItemsForDate(key).length;
+            const done = workoutLogs[key].completed.length;
+
+            return total + (planned > 0 ? Math.min(done / planned, 1) : 1);
+          }, 0) / loggedDays.length) * 100,
+        );
+
     return {
-      monthCount,
+      monthCount: [...workoutDays].filter((key) => key.startsWith(monthPrefix)).length,
       streak,
       totalCount: workoutDays.size,
       exerciseCount: exercises.length,
       connectionCount: connections.filter((item) => item.status === 'CONNECTED').length,
+      scheduledWeekdays: Object.values(weekPlan).filter(Boolean).length,
+      completionRate,
     };
-  }, [workoutDays, exercises, connections]);
+  }, [workoutDays, exercises, connections, weekPlan, workoutLogs, composePlanItemsForDate]);
 
   const value = useMemo(
     () => ({
@@ -178,6 +331,10 @@ export function WorkoutProvider({ children }) {
       workoutDays,
       connections,
       sharedWorkouts,
+      plans,
+      weekPlan,
+      workoutLogs,
+      upcomingDateKeys,
       stats,
       addExercise,
       removeExercise,
@@ -187,12 +344,24 @@ export function WorkoutProvider({ children }) {
       inviteConnection,
       acceptConnection,
       shareExercise,
+      savePlan,
+      deletePlan,
+      assignPlanToWeekday,
+      planById,
+      composePlanItemsForDate,
+      completedForDate,
+      setWorkoutItemCompleted,
+      weekdayLabel: (weekday) => WEEKDAY_FULL_LABELS[weekday],
     }),
     [
       exercises,
       workoutDays,
       connections,
       sharedWorkouts,
+      plans,
+      weekPlan,
+      workoutLogs,
+      upcomingDateKeys,
       stats,
       addExercise,
       removeExercise,
@@ -202,6 +371,13 @@ export function WorkoutProvider({ children }) {
       inviteConnection,
       acceptConnection,
       shareExercise,
+      savePlan,
+      deletePlan,
+      assignPlanToWeekday,
+      planById,
+      composePlanItemsForDate,
+      completedForDate,
+      setWorkoutItemCompleted,
     ],
   );
 

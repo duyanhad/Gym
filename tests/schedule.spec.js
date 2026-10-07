@@ -2,6 +2,13 @@ const { expect, test } = require('@playwright/test');
 
 const { loginAs } = require('./helpers/auth');
 
+/** Khoá ngày hôm nay theo định dạng YYYY-MM-DD. */
+function todayKey() {
+  const today = new Date();
+
+  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+}
+
 test.beforeEach(async ({ page }) => {
   await loginAs(page);
   await page.getByTestId('bottom-tab-Schedule').click();
@@ -18,27 +25,25 @@ test('xem lịch theo tháng và chuyển tháng', async ({ page }) => {
   await expect(monthTitle).not.toHaveText(firstMonth);
 });
 
-test('chạm một ngày để đánh dấu ngày tập', async ({ page }) => {
-  const today = new Date();
-  const key = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-  const expected = `${String(today.getDate()).padStart(2, '0')}/${String(today.getMonth() + 1).padStart(2, '0')}/${today.getFullYear()}`;
+test('chạm một ngày để xem thông tin ngày đó', async ({ page }) => {
+  const key = todayKey();
+  const expected = `${key.slice(8, 10)}/${key.slice(5, 7)}/${key.slice(0, 4)}`;
 
-  const dayCell = page.getByTestId(`schedule-day-${key}`);
-  await expect(dayCell).toBeVisible();
+  await page.getByTestId(`schedule-day-${key}`).click();
 
-  await dayCell.click();
   await expect(page.getByTestId('schedule-selected')).toContainText(expected);
-  await expect(page.getByText('Bạn đã đánh dấu ngày này là ngày tập. Chạm lại để bỏ đánh dấu.')).toBeVisible();
-
-  await dayCell.click();
-  await expect(page.getByText('Chạm vào một ngày trên lịch để đánh dấu đó là ngày bạn đi tập.')).toBeVisible();
 });
 
-test('nút đánh dấu hôm nay tăng tổng số buổi khi ngày hôm nay chưa được đánh dấu', async ({ page }) => {
-  const before = Number(await page.getByTestId('schedule-total').textContent());
+test('thống kê cho biết số buổi mỗi tuần theo lịch', async ({ page }) => {
+  const weekly = Number(await page.getByTestId('schedule-weekly-count').textContent());
+  const total = Number(await page.getByTestId('schedule-total').textContent());
 
-  await page.getByTestId('schedule-mark-today').click();
+  expect(weekly).toBeGreaterThan(0);
+  expect(total).toBeGreaterThanOrEqual(weekly);
+});
 
-  const after = Number(await page.getByTestId('schedule-total').textContent());
-  expect(after).toBeGreaterThanOrEqual(before);
+test('nút về trang chủ quay lại dashboard', async ({ page }) => {
+  await page.getByTestId('schedule-home').click();
+
+  await expect(page.getByTestId('dashboard-screen').first()).toBeVisible();
 });

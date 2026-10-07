@@ -8,8 +8,16 @@ import { useWorkout } from '../contexts/WorkoutContext';
 import TabScreenLayout from '../layouts/TabScreenLayout';
 import { buildMonthMatrix, formatDateKey, monthTitle, shiftMonth, toDateKey, WEEKDAY_LABELS } from '../utils/date';
 
-export default function WorkoutScheduleScreen() {
-  const { isWorkoutDay, toggleWorkoutDay, logWorkoutToday, stats } = useWorkout();
+export default function WorkoutScheduleScreen({ navigation }) {
+  const {
+    isWorkoutDay,
+    stats,
+    weekPlan,
+    planById,
+    composePlanItemsForDate,
+    completedForDate,
+    logWorkoutToday,
+  } = useWorkout();
 
   const today = new Date();
   const todayKey = toDateKey(today);
@@ -20,31 +28,41 @@ export default function WorkoutScheduleScreen() {
 
   const goToMonth = (delta) => setCursor((current) => shiftMonth(current.year, current.month, delta));
 
-  const handleDayPress = (dateKey) => {
-    setSelectedDate(dateKey);
-    toggleWorkoutDay(dateKey);
-  };
+  const selectedWeekday = new Date(`${selectedDate}T00:00:00`).getDay();
+  const selectedPlan = planById(weekPlan[selectedWeekday]);
+  const selectedItems = composePlanItemsForDate(selectedDate);
+  const selectedCompleted = completedForDate(selectedDate);
+  const selectedPercent = selectedItems.length > 0
+    ? Math.round((selectedCompleted.length / selectedItems.length) * 100)
+    : 0;
+
+  const hasPlanOnDate = (dateKey) => Boolean(weekPlan[new Date(`${dateKey}T00:00:00`).getDay()]);
+
+  const openSession = (dateKey) =>
+    navigation.navigate('WorkoutSession', { dateKey, title: 'Chi tiết buổi tập' });
+
+  const summaryTiles = [
+    { key: 'streak', label: 'Chuỗi ngày', value: stats.streak },
+    { key: 'month', label: 'Buổi tháng này', value: stats.monthCount },
+    { key: 'total', label: 'Tổng buổi', value: stats.totalCount, testID: 'schedule-total' },
+    { key: 'weekly', label: 'Buổi/tuần', value: stats.scheduledWeekdays, testID: 'schedule-weekly-count' },
+  ];
 
   return (
     <TabScreenLayout testID="schedule-screen" style={styles.page}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <Card style={styles.summaryCard}>
-          <View style={styles.summaryItem}>
-            <Text style={styles.summaryValue}>{stats.streak}</Text>
-            <Text style={styles.summaryLabel}>Chuỗi ngày</Text>
-          </View>
-          <View style={styles.divider} />
-          <View style={styles.summaryItem}>
-            <Text style={styles.summaryValue}>{stats.monthCount}</Text>
-            <Text style={styles.summaryLabel}>Buổi tháng này</Text>
-          </View>
-          <View style={styles.divider} />
-          <View style={styles.summaryItem}>
-            <Text testID="schedule-total" style={styles.summaryValue}>
-              {stats.totalCount}
-            </Text>
-            <Text style={styles.summaryLabel}>Tổng buổi</Text>
-          </View>
+          {summaryTiles.map((tile, index) => (
+            <View key={tile.key} style={styles.summaryItem}>
+              {index > 0 ? <View style={styles.divider} /> : null}
+              <View style={styles.summaryValueBlock}>
+                <Text testID={tile.testID} style={styles.summaryValue}>
+                  {tile.value}
+                </Text>
+                <Text style={styles.summaryLabel}>{tile.label}</Text>
+              </View>
+            </View>
+          ))}
         </Card>
 
         <Card style={styles.calendarCard}>
@@ -88,6 +106,7 @@ export default function WorkoutScheduleScreen() {
                 if (!cell) return <View key={`blank-${weekIndex}-${cellIndex}`} style={styles.dayCell} />;
 
                 const trained = isWorkoutDay(cell.key);
+                const planned = hasPlanOnDate(cell.key);
                 const isToday = cell.key === todayKey;
                 const isSelected = cell.key === selectedDate;
 
@@ -96,9 +115,8 @@ export default function WorkoutScheduleScreen() {
                     key={cell.key}
                     testID={`schedule-day-${cell.key}`}
                     accessibilityRole="button"
-                    accessibilityLabel={`${formatDateKey(cell.key)}${trained ? ' - đã tập' : ''}`}
-                    accessibilityState={{ selected: trained }}
-                    onPress={() => handleDayPress(cell.key)}
+                    accessibilityLabel={`${formatDateKey(cell.key)}${trained ? ' - đã tập' : ''}${planned ? ' - có buổi tập theo lịch' : ''}`}
+                    onPress={() => setSelectedDate(cell.key)}
                     style={styles.dayCell}
                   >
                     <View
@@ -111,7 +129,7 @@ export default function WorkoutScheduleScreen() {
                     >
                       <Text style={[styles.dayText, trained && styles.dayTextTrained]}>{cell.day}</Text>
                     </View>
-                    <View style={[styles.dot, trained && styles.dotTrained]} />
+                    <View style={[styles.dot, trained && styles.dotTrained, !trained && planned && styles.dotPlanned]} />
                   </Pressable>
                 );
               })}
@@ -121,7 +139,11 @@ export default function WorkoutScheduleScreen() {
           <View style={styles.legendRow}>
             <View style={styles.legendItem}>
               <View style={[styles.dayBadge, styles.dayBadgeTrained, styles.legendBadge]} />
-              <Text style={styles.legendText}>Ngày đã tập</Text>
+              <Text style={styles.legendText}>Đã tập</Text>
+            </View>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendDot, styles.dotPlanned]} />
+              <Text style={styles.legendText}>Có buổi tập</Text>
             </View>
             <View style={styles.legendItem}>
               <View style={[styles.dayBadge, styles.dayBadgeToday, styles.legendBadge]} />
@@ -135,11 +157,38 @@ export default function WorkoutScheduleScreen() {
           <Text testID="schedule-selected" style={styles.selectedDate}>
             {formatDateKey(selectedDate)}
           </Text>
-          <Text style={styles.selectedHint}>
-            {isWorkoutDay(selectedDate)
-              ? 'Bạn đã đánh dấu ngày này là ngày tập. Chạm lại để bỏ đánh dấu.'
-              : 'Chạm vào một ngày trên lịch để đánh dấu đó là ngày bạn đi tập.'}
+
+          <Text style={styles.selectedPlan}>
+            {selectedPlan ? `Buổi tập: ${selectedPlan.name}` : 'Ngày này chưa có buổi tập theo lịch tuần'}
           </Text>
+
+          {selectedItems.length > 0 ? (
+            <Text testID="schedule-selected-progress" style={styles.selectedProgress}>
+              Hoàn thành {selectedCompleted.length}/{selectedItems.length} bài · {selectedPercent}%
+            </Text>
+          ) : null}
+
+          <Pressable
+            testID="schedule-open-session"
+            accessibilityRole="button"
+            accessibilityLabel="Xem chi tiết buổi tập"
+            onPress={() => openSession(selectedDate)}
+            style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}
+          >
+            <Ionicons name="barbell-outline" size={18} color={colors.background} />
+            <Text style={styles.primaryLabel}>XEM CHI TIẾT BUỔI TẬP</Text>
+          </Pressable>
+
+          <Pressable
+            testID="schedule-open-weekly"
+            accessibilityRole="button"
+            accessibilityLabel="Thiết lập lịch tuần"
+            onPress={() => navigation.navigate('WeeklyPlan')}
+            style={({ pressed }) => [styles.ghostButton, pressed && styles.pressed]}
+          >
+            <Ionicons name="calendar-number-outline" size={18} color={colors.accent} />
+            <Text style={styles.ghostLabel}>THIẾT LẬP LỊCH TUẦN</Text>
+          </Pressable>
 
           <Pressable
             testID="schedule-mark-today"
@@ -149,10 +198,21 @@ export default function WorkoutScheduleScreen() {
               logWorkoutToday();
               setSelectedDate(todayKey);
             }}
-            style={({ pressed }) => [styles.todayButton, pressed && styles.pressed]}
+            style={({ pressed }) => [styles.ghostButton, pressed && styles.pressed]}
           >
-            <Ionicons name="checkmark-circle-outline" size={18} color={colors.background} />
-            <Text style={styles.todayButtonLabel}>ĐÁNH DẤU HÔM NAY ĐÃ TẬP</Text>
+            <Ionicons name="checkmark-circle-outline" size={18} color={colors.accent} />
+            <Text style={styles.ghostLabel}>ĐÁNH DẤU HÔM NAY ĐÃ TẬP</Text>
+          </Pressable>
+
+          <Pressable
+            testID="schedule-home"
+            accessibilityRole="button"
+            accessibilityLabel="Về trang chủ"
+            onPress={() => navigation.navigate('Dashboard')}
+            style={({ pressed }) => [styles.ghostButton, pressed && styles.pressed]}
+          >
+            <Ionicons name="home-outline" size={18} color={colors.accent} />
+            <Text style={styles.ghostLabel}>VỀ TRANG CHỦ</Text>
           </Pressable>
         </Card>
 
@@ -175,18 +235,23 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   summaryItem: {
+    flex: 1,
+    flexDirection: 'row',
+  },
+  summaryValueBlock: {
     alignItems: 'center',
     flex: 1,
     gap: 4,
   },
   summaryValue: {
     color: colors.accent,
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '900',
   },
   summaryLabel: {
     color: colors.muted,
-    fontSize: 10,
+    fontSize: 9,
+    textAlign: 'center',
   },
   divider: {
     backgroundColor: colors.border,
@@ -277,19 +342,28 @@ const styles = StyleSheet.create({
   dotTrained: {
     backgroundColor: colors.success,
   },
+  dotPlanned: {
+    backgroundColor: colors.accent,
+  },
   legendRow: {
     flexDirection: 'row',
-    gap: 18,
+    flexWrap: 'wrap',
+    gap: 14,
     marginTop: 18,
   },
   legendItem: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: 8,
+    gap: 7,
   },
   legendBadge: {
     height: 18,
     width: 18,
+  },
+  legendDot: {
+    borderRadius: 999,
+    height: 6,
+    width: 6,
   },
   legendText: {
     color: colors.muted,
@@ -310,13 +384,18 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     marginTop: 8,
   },
-  selectedHint: {
+  selectedPlan: {
+    color: colors.accent,
+    fontSize: 13,
+    fontWeight: '700',
+    marginTop: 10,
+  },
+  selectedProgress: {
     color: colors.muted,
     fontSize: 12,
-    lineHeight: 19,
     marginTop: 8,
   },
-  todayButton: {
+  primaryButton: {
     alignItems: 'center',
     backgroundColor: colors.accent,
     borderRadius: 14,
@@ -324,13 +403,30 @@ const styles = StyleSheet.create({
     gap: 8,
     justifyContent: 'center',
     marginTop: 16,
-    paddingVertical: 14,
+    paddingVertical: 15,
   },
-  todayButtonLabel: {
+  primaryLabel: {
     color: colors.background,
     fontSize: 12,
     fontWeight: '900',
-    letterSpacing: 1.2,
+    letterSpacing: 1.1,
+  },
+  ghostButton: {
+    alignItems: 'center',
+    borderColor: colors.inputBorder,
+    borderRadius: 14,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'center',
+    marginTop: 10,
+    paddingVertical: 14,
+  },
+  ghostLabel: {
+    color: colors.accent,
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 1.1,
   },
   footer: {
     color: colors.dim,

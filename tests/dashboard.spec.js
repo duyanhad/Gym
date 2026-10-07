@@ -31,3 +31,12 @@ test('đánh dấu và bỏ đánh dấu buổi tập hôm nay', async ({ page }
   await markButton.click();
   await expect(page.getByText('Sẵn sàng cho buổi tập hôm nay?')).toBeVisible();
 });
+
+test('hiển thị buổi tập sắp tới và mở được chi tiết buổi tập', async ({ page }) => {
+  const upcoming = page.locator('[data-testid^="dashboard-session-"]').first();
+
+  await expect(upcoming).toBeVisible();
+  await upcoming.click();
+
+  await expect(page.getByTestId('session-screen')).toBeVisible();
+});
