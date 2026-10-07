@@ -53,7 +53,9 @@ export async function apiRequest(path, { method = 'GET', body, auth = true, sign
       body: body === undefined ? undefined : JSON.stringify(body),
     });
   } catch {
-    throw new ApiError('Không kết nối được máy chủ. Vui lòng kiểm tra lại kết nối.');
+    throw new ApiError(
+      `Không kết nối được máy chủ API (${API_BASE_URL}). Hãy chắc chắn backend GYM System đang chạy.`,
+    );
   }
 
   const raw = await response.text();

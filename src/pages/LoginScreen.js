@@ -16,6 +16,7 @@ import GymLogo from '../components/GymLogo';
 import { colors } from '../constants/theme';
 import { useAuth } from '../contexts/AuthContext';
 import AppLayout from '../layouts/AppLayout';
+import { API_BASE_URL } from '../services/apiClient';
 
 const DEMO_ACCOUNTS = [
   { label: 'Admin', username: 'admin', password: 'Admin@123', icon: 'shield-checkmark-outline' },
@@ -217,6 +218,9 @@ export default function LoginScreen() {
           </View>
 
           <Text style={styles.footer}>KIÊN TRÌ TẠO NÊN KHÁC BIỆT</Text>
+          <Text testID="login-api-hint" style={styles.apiHint}>
+            API: {API_BASE_URL}
+          </Text>
         </ScrollView>
       </KeyboardAvoidingView>
     </AppLayout>
@@ -449,6 +453,13 @@ const styles = StyleSheet.create({
     letterSpacing: 2,
     marginBottom: 'auto',
     paddingTop: 22,
+    textAlign: 'center',
+  },
+  apiHint: {
+    color: '#4E5761',
+    fontSize: 9,
+    letterSpacing: 0.6,
+    marginTop: 8,
     textAlign: 'center',
   },
 });
