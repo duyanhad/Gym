@@ -23,6 +23,17 @@ export default function ExercisesScreen({ navigation }) {
 
   const [search, setSearch] = useState('');
   const [group, setGroup] = useState('Tất cả');
+  const [error, setError] = useState('');
+
+  const handleDelete = async (exercise) => {
+    setError('');
+
+    try {
+      await removeExercise(exercise.id);
+    } catch (requestError) {
+      setError(requestError.message ?? 'Không xoá được bài tập.');
+    }
+  };
 
   const filtered = useMemo(() => {
     const keyword = search.trim().toLowerCase();
@@ -76,6 +87,13 @@ export default function ExercisesScreen({ navigation }) {
           {filtered.length} BÀI TẬP
         </Text>
 
+        {error ? (
+          <View testID="exercise-error" style={styles.errorBox}>
+            <Ionicons name="alert-circle-outline" size={18} color="#FF8F8F" />
+            <Text style={styles.errorText}>{error}</Text>
+          </View>
+        ) : null}
+
         {filtered.length === 0 ? (
           <Card style={styles.emptyCard}>
             <Ionicons name="barbell-outline" size={26} color={colors.dim} />
@@ -97,15 +115,21 @@ export default function ExercisesScreen({ navigation }) {
                   <Text style={styles.exerciseGroup}>{exercise.group}</Text>
                 </View>
 
-                <Pressable
-                  testID={`delete-${exercise.id}`}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Xoá bài tập ${exercise.name}`}
-                  onPress={() => removeExercise(exercise.id)}
-                  style={({ pressed }) => [styles.deleteButton, pressed && styles.pressed]}
-                >
-                  <Ionicons name="trash-outline" size={16} color={colors.danger} />
-                </Pressable>
+                {exercise.isSystem ? (
+                  <View testID={`system-${exercise.id}`} style={styles.systemBadge}>
+                    <Text style={styles.systemBadgeText}>MẪU</Text>
+                  </View>
+                ) : (
+                  <Pressable
+                    testID={`delete-${exercise.id}`}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Xoá bài tập ${exercise.name}`}
+                    onPress={() => handleDelete(exercise)}
+                    style={({ pressed }) => [styles.deleteButton, pressed && styles.pressed]}
+                  >
+                    <Ionicons name="trash-outline" size={16} color={colors.danger} />
+                  </Pressable>
+                )}
               </View>
 
               <View style={styles.metricRow}>
@@ -239,6 +263,36 @@ const styles = StyleSheet.create({
     height: 34,
     justifyContent: 'center',
     width: 34,
+  },
+  systemBadge: {
+    backgroundColor: colors.surfaceAlt,
+    borderColor: colors.border,
+    borderRadius: 10,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  systemBadgeText: {
+    color: colors.dim,
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  errorBox: {
+    alignItems: 'center',
+    backgroundColor: colors.dangerSoft,
+    borderColor: 'rgba(255, 91, 91, 0.35)',
+    borderRadius: 14,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+    padding: 12,
+  },
+  errorText: {
+    color: '#FF8F8F',
+    flex: 1,
+    fontSize: 11,
   },
   metricRow: {
     borderTopColor: '#232A34',

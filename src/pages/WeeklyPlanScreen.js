@@ -9,7 +9,7 @@ import { useWorkout } from '../contexts/WorkoutContext';
 import AppLayout from '../layouts/AppLayout';
 
 export default function WeeklyPlanScreen({ navigation }) {
-  const { plans, weekPlan, exercises, assignPlanToWeekday, planById, deletePlan, savePlan, stats, weekdayLabel } =
+  const { plans, weekPlan, exercises, assignPlanToWeekday, planById, deletePlanById, savePlan, stats, weekdayLabel } =
     useWorkout();
 
   const [openWeekday, setOpenWeekday] = useState(null);
@@ -46,7 +46,7 @@ export default function WeeklyPlanScreen({ navigation }) {
     }));
   };
 
-  const handleSavePlan = () => {
+  const handleSavePlan = async () => {
     const selectedIds = Object.keys(picked);
 
     if (!draft.name.trim()) {
@@ -59,24 +59,48 @@ export default function WeeklyPlanScreen({ navigation }) {
       return;
     }
 
-    const plan = savePlan({
-      name: draft.name,
-      focus: draft.focus,
-      note: draft.note,
-      items: selectedIds.map((exerciseId) => {
-        const exercise = exercises.find((item) => item.id === exerciseId);
+    try {
+      const plan = await savePlan({
+        name: draft.name,
+        focus: draft.focus,
+        note: draft.note,
+        items: selectedIds.map((exerciseId) => {
+          const exercise = exercises.find((item) => item.id === exerciseId);
 
-        return {
-          exerciseName: exercise.name,
-          targetSets: picked[exerciseId].sets,
-          targetReps: picked[exerciseId].reps,
-        };
-      }),
-    });
+          return {
+            exerciseId,
+            exerciseName: exercise.name,
+            targetSets: picked[exerciseId].sets,
+            targetReps: picked[exerciseId].reps,
+            restSeconds: exercise.restSeconds,
+          };
+        }),
+      });
 
-    setSavedName(plan.name);
-    setDraft({ name: '', focus: '', note: '' });
-    setPicked({});
+      setSavedName(plan.name);
+      setDraft({ name: '', focus: '', note: '' });
+      setPicked({});
+    } catch (requestError) {
+      setError(requestError.message ?? 'Không lưu được buổi tập.');
+    }
+  };
+
+  const handleAssign = async (weekday, planId) => {
+    setOpenWeekday(null);
+
+    try {
+      await assignPlanToWeekday(weekday, planId);
+    } catch (requestError) {
+      setError(requestError.message ?? 'Không lưu được lịch tuần.');
+    }
+  };
+
+  const handleDeletePlan = async (planId) => {
+    try {
+      await deletePlanById(planId);
+    } catch (requestError) {
+      setError(requestError.message ?? 'Không xoá được buổi tập.');
+    }
   };
 
   return (
@@ -135,10 +159,7 @@ export default function WeeklyPlanScreen({ navigation }) {
                       testID={`weekday-option-${weekday}-none`}
                       accessibilityRole="button"
                       accessibilityLabel="Nghỉ"
-                      onPress={() => {
-                        assignPlanToWeekday(weekday, null);
-                        setOpenWeekday(null);
-                      }}
+                      onPress={() => handleAssign(weekday, null)}
                       style={({ pressed }) => [styles.optionRow, pressed && styles.pressed]}
                     >
                       <Ionicons name="remove-circle-outline" size={16} color={colors.muted} />
@@ -151,10 +172,7 @@ export default function WeeklyPlanScreen({ navigation }) {
                         testID={`weekday-option-${weekday}-${plan.id}`}
                         accessibilityRole="button"
                         accessibilityLabel={plan.name}
-                        onPress={() => {
-                          assignPlanToWeekday(weekday, plan.id);
-                          setOpenWeekday(null);
-                        }}
+                        onPress={() => handleAssign(weekday, plan.id)}
                         style={({ pressed }) => [
                           styles.optionRow,
                           weekPlan[weekday] === plan.id && styles.optionRowActive,
@@ -188,15 +206,17 @@ export default function WeeklyPlanScreen({ navigation }) {
                   {plan.focus ? <Text style={styles.planFocus}>{plan.focus}</Text> : null}
                 </View>
 
-                <Pressable
-                  testID={`plan-delete-${plan.id}`}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Xoá buổi tập ${plan.name}`}
-                  onPress={() => deletePlan(plan.id)}
-                  style={({ pressed }) => [styles.deleteButton, pressed && styles.pressed]}
-                >
-                  <Ionicons name="trash-outline" size={16} color={colors.danger} />
-                </Pressable>
+                {plan.isSystem ? null : (
+                  <Pressable
+                    testID={`plan-delete-${plan.id}`}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Xoá buổi tập ${plan.name}`}
+                    onPress={() => handleDeletePlan(plan.id)}
+                    style={({ pressed }) => [styles.deleteButton, pressed && styles.pressed]}
+                  >
+                    <Ionicons name="trash-outline" size={16} color={colors.danger} />
+                  </Pressable>
+                )}
               </View>
 
               {plan.items.map((item) => (

@@ -1,9 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { colors } from '../constants/theme';
-import { useWorkout } from '../contexts/WorkoutContext';
 import { toDateKey } from '../utils/date';
 
 export const BOTTOM_TABS = [
@@ -14,18 +13,23 @@ export const BOTTOM_TABS = [
   { name: 'Settings', label: 'Cài đặt', icon: 'settings-outline', activeIcon: 'settings' },
 ];
 
-/** 4 hành động xếp quanh núm giữa, dàn thành hình quạt phía trên. */
+/**
+ * 4 thao tác chính xếp thành vòng tròn quanh tâm màn hình.
+ * Góc theo hệ toạ độ màn hình: 0° = phải, 90° = xuống.
+ */
 const ACTIONS = [
-  { key: 'session', label: 'Bắt đầu buổi tập', icon: 'play', angle: 150 },
-  { key: 'add', label: 'Thêm bài tập', icon: 'add', angle: 110, route: 'AddExercise' },
-  { key: 'share', label: 'Chia sẻ', icon: 'share-social-outline', angle: 70, route: 'Share' },
-  { key: 'schedule', label: 'Lịch tuần', icon: 'calendar-number-outline', angle: 30, route: 'WeeklyPlan' },
+  { key: 'session', label: 'Bắt đầu buổi tập', icon: 'play', angle: 225, primary: true },
+  { key: 'schedule', label: 'Lịch tuần', icon: 'calendar-number-outline', angle: 315, route: 'WeeklyPlan' },
+  { key: 'add', label: 'Thêm bài tập', icon: 'add', angle: 135, route: 'AddExercise' },
+  { key: 'share', label: 'Chia sẻ', icon: 'share-social-outline', angle: 45, route: 'Share' },
 ];
 
 const FAB_SIZE = 60;
-const ACTION_SIZE = 58;
-const RADIUS = 100;
-const FAB_CENTER_BOTTOM = 76;
+const ACTION_SIZE = 62;
+const ACTION_SLOT_WIDTH = 92;
+const ACTION_SLOT_HEIGHT = 100;
+const HUB_SIZE = 116;
+const RADIUS = 120;
 
 function polar(angleDeg, radius) {
   const radians = (angleDeg * Math.PI) / 180;
@@ -34,17 +38,12 @@ function polar(angleDeg, radius) {
 }
 
 /**
- * Thanh điều hướng dưới cùng (5 mục) + núm giữa.
- * Bấm núm để mở 4 nút tròn xung quanh: Bắt đầu buổi tập / Thêm bài tập / Chia sẻ / Lịch tuần.
- * Đang tập thì núm giữa đổi thành "Kết thúc".
+ * Thanh điều hướng dưới cùng + núm tròn ở giữa thanh.
+ * Bấm núm giữa để mở vòng tròn thao tác ở **giữa màn hình**:
+ * Bắt đầu buổi tập / Lịch tuần / Thêm bài tập / Chia sẻ.
  */
 export default function BottomNav({ state, navigation, insets }) {
-  const { sessionOf, startSession, finishSession } = useWorkout();
   const [open, setOpen] = useState(false);
-
-  const todayKey = toDateKey(new Date());
-  const todaySession = sessionOf(todayKey);
-  const inProgress = Boolean(todaySession.startedAt && !todaySession.finishedAt);
   const activeName = state.routes[state.index]?.name;
 
   useEffect(() => {
@@ -52,32 +51,15 @@ export default function BottomNav({ state, navigation, insets }) {
   }, [activeName]);
 
   const bottomInset = insets?.bottom ?? 0;
-  const openWorkoutSession = () =>
-    navigation.getParent()?.navigate('WorkoutSession', { dateKey: todayKey, title: 'Buổi tập hôm nay' });
-
-  const handlePrimary = () => {
-    if (!open) {
-      setOpen(true);
-      return;
-    }
-
-    if (inProgress) {
-      finishSession(todayKey);
-      setOpen(false);
-      return;
-    }
-
-    startSession(todayKey);
-    setOpen(false);
-    openWorkoutSession();
-  };
+  const todayKey = toDateKey(new Date());
 
   const handleAction = (action) => {
     setOpen(false);
 
     if (action.key === 'session') {
-      if (!inProgress) startSession(todayKey);
-      openWorkoutSession();
+      navigation
+        .getParent()
+        ?.navigate('WorkoutSession', { dateKey: todayKey, title: 'Buổi tập hôm nay' });
       return;
     }
 
@@ -87,54 +69,67 @@ export default function BottomNav({ state, navigation, insets }) {
   return (
     <View style={styles.wrapper}>
       {open ? (
-        <>
-          <Pressable
-            testID="quick-actions-backdrop"
-            accessibilityRole="button"
-            accessibilityLabel="Đóng menu nhanh"
-            onPress={() => setOpen(false)}
-            style={styles.backdrop}
-          />
+        <Modal animationType="fade" transparent visible onRequestClose={() => setOpen(false)}>
+          <View testID="quick-actions-overlay" style={styles.overlay}>
+            <Pressable
+              testID="quick-actions-backdrop"
+              accessibilityRole="button"
+              accessibilityLabel="Đóng menu nhanh"
+              onPress={() => setOpen(false)}
+              style={StyleSheet.absoluteFill}
+            />
 
-          <View pointerEvents="box-none" style={styles.actionLayer}>
-            <Text style={styles.actionLayerTitle}>
-              {inProgress ? 'BUỔI TẬP ĐANG DIỄN RA' : 'BẮT ĐẦU NHANH'}
-            </Text>
+            <View pointerEvents="box-none" style={styles.hub}>
+              {ACTIONS.map((action) => {
+                const offset = polar(action.angle, RADIUS);
+                const primary = Boolean(action.primary);
 
-            {ACTIONS.map((action) => {
-              const offset = polar(action.angle, RADIUS);
-              const isSession = action.key === 'session';
-              const highlight = isSession && !inProgress;
+                return (
+                  <Pressable
+                    key={action.key}
+                    testID={`quick-action-${action.key}`}
+                    accessibilityRole="button"
+                    accessibilityLabel={action.label}
+                    onPress={() => handleAction(action)}
+                    style={({ pressed }) => [
+                      styles.actionSlot,
+                      {
+                        marginLeft: offset.x - ACTION_SLOT_WIDTH / 2,
+                        marginTop: offset.y - ACTION_SLOT_HEIGHT / 2,
+                      },
+                      pressed && styles.pressed,
+                    ]}
+                  >
+                    <View style={[styles.actionCircle, primary && styles.actionCirclePrimary]}>
+                      <Ionicons
+                        name={action.icon}
+                        size={22}
+                        color={primary ? colors.background : colors.accent}
+                      />
+                    </View>
+                    <Text style={[styles.actionLabel, primary && styles.actionLabelPrimary]}>
+                      {action.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
 
-              return (
-                <Pressable
-                  key={action.key}
-                  testID={`quick-action-${action.key}`}
-                  accessibilityRole="button"
-                  accessibilityLabel={action.label}
-                  onPress={() => handleAction(action)}
-                  style={({ pressed }) => [
-                    styles.actionSlot,
-                    {
-                      bottom: FAB_CENTER_BOTTOM + offset.y - ACTION_SIZE / 2,
-                      marginLeft: offset.x - ACTION_SIZE / 2,
-                    },
-                    pressed && styles.pressed,
-                  ]}
-                >
-                  <View style={[styles.actionCircle, highlight && styles.actionCircleHighlight]}>
-                    <Ionicons
-                      name={isSession && inProgress ? 'stop' : action.icon}
-                      size={22}
-                      color={highlight ? colors.background : colors.accent}
-                    />
-                  </View>
-                  <Text style={styles.actionLabel}>{action.label}</Text>
-                </Pressable>
-              );
-            })}
+              <Pressable
+                testID="quick-actions-close"
+                accessibilityRole="button"
+                accessibilityLabel="Đóng menu nhanh"
+                onPress={() => setOpen(false)}
+                style={({ pressed }) => [styles.hubCenter, pressed && styles.pressed]}
+              >
+                <View style={styles.hubRing}>
+                  <Ionicons name="close" size={20} color={colors.accent} />
+                  <Text style={styles.hubTitle}>THAO TÁC</Text>
+                  <Text style={styles.hubHint}>Chạm ngoài để đóng</Text>
+                </View>
+              </Pressable>
+            </View>
           </View>
-        </>
+        </Modal>
       ) : null}
 
       <View style={[styles.bar, { paddingBottom: Math.max(bottomInset, 10) }]}>
@@ -182,21 +177,16 @@ export default function BottomNav({ state, navigation, insets }) {
       <Pressable
         testID="quick-action-fab"
         accessibilityRole="button"
-        accessibilityLabel={open ? (inProgress ? 'Kết thúc buổi tập' : 'Bắt đầu buổi tập') : 'Mở thao tác nhanh'}
+        accessibilityLabel="Mở thao tác nhanh"
         accessibilityState={{ expanded: open }}
-        onPress={handlePrimary}
+        onPress={() => setOpen(true)}
         style={({ pressed }) => [
           styles.fab,
           { bottom: Math.max(bottomInset, 10) + 18 },
-          inProgress && styles.fabActive,
           pressed && styles.pressed,
         ]}
       >
-        <Ionicons
-          name={open ? (inProgress ? 'stop' : 'play') : 'ellipsis-horizontal'}
-          size={open ? 24 : 26}
-          color={colors.background}
-        />
+        <Ionicons name="barbell" size={26} color={colors.background} />
       </Pressable>
     </View>
   );
@@ -206,45 +196,56 @@ const styles = StyleSheet.create({
   wrapper: {
     position: 'relative',
   },
-  backdrop: {
-    backgroundColor: 'rgba(6, 8, 12, 0.75)',
+  overlay: {
+    backgroundColor: 'rgba(6, 8, 12, 0.82)',
+    flex: 1,
+  },
+  hub: {
+    alignItems: 'center',
     bottom: 0,
+    justifyContent: 'center',
     left: 0,
     position: 'absolute',
     right: 0,
-    top: -900,
-    zIndex: 1,
+    top: 0,
   },
-  actionLayer: {
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
-    right: 0,
-    top: -900,
-    zIndex: 2,
+  hubCenter: {
+    alignItems: 'center',
+    height: HUB_SIZE,
+    justifyContent: 'center',
+    width: HUB_SIZE,
   },
-  actionLayerTitle: {
-    alignSelf: 'center',
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
+  hubRing: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceAlt,
+    borderColor: colors.accent,
     borderRadius: 999,
     borderWidth: 1,
-    bottom: RADIUS + FAB_CENTER_BOTTOM + 86,
-    color: colors.muted,
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 1.8,
-    overflow: 'hidden',
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    position: 'absolute',
+    height: HUB_SIZE,
+    justifyContent: 'center',
+    width: HUB_SIZE,
+  },
+  hubTitle: {
+    color: colors.text,
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 1.4,
+    marginTop: 4,
+  },
+  hubHint: {
+    color: colors.dim,
+    fontSize: 8,
+    fontWeight: '600',
+    marginTop: 4,
     textAlign: 'center',
   },
   actionSlot: {
     alignItems: 'center',
+    height: ACTION_SLOT_HEIGHT,
     left: '50%',
     position: 'absolute',
-    width: 96,
+    top: '50%',
+    width: ACTION_SLOT_WIDTH,
   },
   actionCircle: {
     alignItems: 'center',
@@ -256,7 +257,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: ACTION_SIZE,
   },
-  actionCircleHighlight: {
+  actionCirclePrimary: {
     backgroundColor: colors.accent,
     borderColor: colors.accent,
   },
@@ -266,6 +267,9 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginTop: 6,
     textAlign: 'center',
+  },
+  actionLabelPrimary: {
+    color: colors.accent,
   },
   bar: {
     alignItems: 'flex-end',
@@ -319,8 +323,5 @@ const styles = StyleSheet.create({
     position: 'absolute',
     width: FAB_SIZE,
     zIndex: 3,
-  },
-  fabActive: {
-    backgroundColor: colors.success,
   },
 });

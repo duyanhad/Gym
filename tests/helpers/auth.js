@@ -1,3 +1,5 @@
+const { mockWorkoutApi } = require('./workoutApi');
+
 const API_LOGIN = '**/api/auth/login';
 
 const demoUser = {
@@ -8,7 +10,7 @@ const demoUser = {
   status: 'ACTIVE',
   isActive: true,
   roles: ['Admin'],
-  permissions: ['MEMBER_VIEW', 'DASHBOARD_VIEW'],
+  permissions: ['MEMBER_VIEW', 'DASHBOARD_VIEW', 'WORKOUT_VIEW', 'WORKOUT_MANAGE', 'WORKOUT_SHARE'],
 };
 
 /** Giả lập backend trả về đăng nhập thành công. */
@@ -49,12 +51,23 @@ async function submitLogin(page, { username = 'admin', password = 'Admin@123' } 
   await page.getByTestId('login-submit').click();
 }
 
-/** Vào app với backend đã được giả lập thành công (dùng cho test các màn hình sau đăng nhập). */
-async function loginAs(page, user = demoUser) {
+/**
+ * Vào app với backend đã được giả lập thành công.
+ * API tập luyện cũng được giả lập; đăng ký trước route login để route login được ưu tiên.
+ */
+async function loginAs(page, user = demoUser, workoutOptions) {
+  await mockWorkoutApi(page, workoutOptions);
   await mockLoginSuccess(page, user);
   await page.goto('/');
   await submitLogin(page, { username: user.username, password: 'Admin@123' });
   await page.getByTestId('dashboard-screen').waitFor();
 }
 
-module.exports = { API_LOGIN, demoUser, mockLoginSuccess, mockLoginFailure, submitLogin, loginAs };
+module.exports = {
+  API_LOGIN,
+  demoUser,
+  loginAs,
+  mockLoginFailure,
+  mockLoginSuccess,
+  submitLogin,
+};

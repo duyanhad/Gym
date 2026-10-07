@@ -2,26 +2,33 @@ const { expect, test } = require('@playwright/test');
 
 const { loginAs } = require('./helpers/auth');
 
-test.beforeEach(async ({ page }) => {
+test('núm giữa mở ra các nút tròn thao tác ở giữa màn hình', async ({ page }) => {
   await loginAs(page);
-});
 
-test('núm giữa mở ra các nút tròn xung quanh', async ({ page }) => {
   await expect(page.getByTestId('quick-action-session')).toHaveCount(0);
 
   await page.getByTestId('quick-action-fab').click();
 
-  await expect(page.getByTestId('quick-action-session')).toBeVisible();
-  await expect(page.getByTestId('quick-action-add')).toBeVisible();
-  await expect(page.getByTestId('quick-action-share')).toBeVisible();
-  await expect(page.getByTestId('quick-action-schedule')).toBeVisible();
+  await expect(page.getByTestId('quick-actions-overlay')).toBeVisible();
+
+  for (const action of ['session', 'schedule', 'add', 'share']) {
+    await expect(page.getByTestId(`quick-action-${action}`)).toBeVisible();
+  }
+
+  const viewport = page.viewportSize();
+  const hub = await page.getByTestId('quick-actions-close').boundingBox();
+
+  expect(Math.abs(hub.x + hub.width / 2 - viewport.width / 2)).toBeLessThan(60);
+  expect(Math.abs(hub.y + hub.height / 2 - viewport.height / 2)).toBeLessThan(90);
 
   // Chạm ra vùng tối bên ngoài để đóng
-  await page.mouse.click(20, 60);
+  await page.getByTestId('quick-actions-backdrop').click({ position: { x: 20, y: 20 } });
   await expect(page.getByTestId('quick-action-session')).toHaveCount(0);
 });
 
-test('thao tác nhanh mở được màn tương ứng', async ({ page }) => {
+test('các nút tròn mở được màn tương ứng', async ({ page }) => {
+  await loginAs(page);
+
   await page.getByTestId('quick-action-fab').click();
   await page.getByTestId('quick-action-add').click();
   await expect(page.getByTestId('add-exercise-screen')).toBeVisible();
@@ -35,38 +42,28 @@ test('thao tác nhanh mở được màn tương ứng', async ({ page }) => {
   await expect(page.getByTestId('weekly-plan-screen')).toBeVisible();
 });
 
-test('bắt đầu buổi tập từ núm giữa: đồng hồ chạy và kết thúc được', async ({ page }) => {
+test('nút "Bắt đầu buổi tập" mở màn chuẩn bị buổi tập', async ({ page }) => {
+  await loginAs(page);
+
   await page.getByTestId('quick-action-fab').click();
   await page.getByTestId('quick-action-session').click();
 
   await expect(page.getByTestId('session-screen')).toBeVisible();
-  await expect(page.getByTestId('session-status')).toHaveText('ĐANG TẬP');
-
-  const first = await page.getByTestId('session-timer').textContent();
-  await page.waitForTimeout(2200);
-  const second = await page.getByTestId('session-timer').textContent();
-
-  expect(second).not.toBe(first);
-
-  await page.getByTestId('session-finish').click();
-  await expect(page.getByTestId('session-status')).toHaveText('ĐÃ KẾT THÚC');
-
-  await page.getByTestId('session-back-to-schedule').click();
-  await expect(page.getByTestId('schedule-screen')).toBeVisible();
+  await expect(page.getByTestId('session-start')).toBeVisible();
+  await expect(page.getByText('CHUẨN BỊ BUỔI TẬP')).toBeVisible();
 });
 
-test('thanh "Buổi tập hôm nay" ở các màn hình chính bắt đầu được buổi tập', async ({ page }) => {
-  await page.getByTestId('bottom-tab-Exercises').click();
+test('nút giữa vẫn dùng được sau khi đóng menu (không che màn hình)', async ({ page }) => {
+  await loginAs(page);
 
-  const barOnExercises = page.getByTestId('exercises-screen-session-bar');
-  await expect(barOnExercises).toContainText('Chưa bắt đầu');
+  await page.getByTestId('quick-action-fab').click();
+  await page.getByTestId('quick-actions-close').click();
+  await expect(page.getByTestId('quick-actions-overlay')).toHaveCount(0);
 
-  await barOnExercises.click();
+  await page.getByTestId('bottom-tab-Settings').click();
+  await page.getByTestId('header-brand').first().click();
+  await expect(page.getByTestId('dashboard-screen').first()).toBeVisible();
 
-  await expect(page.getByTestId('session-screen')).toBeVisible();
-  await expect(page.getByTestId('session-status')).toHaveText('ĐANG TẬP');
-
-  await page.getByTestId('session-back-to-schedule').click();
-  await expect(page.getByTestId('schedule-screen')).toBeVisible();
-  await expect(page.getByTestId('schedule-screen-session-bar')).toContainText('Đang tập');
+  await page.getByTestId('quick-action-fab').click();
+  await expect(page.getByTestId('quick-action-session')).toBeVisible();
 });

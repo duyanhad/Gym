@@ -23,6 +23,7 @@ export default function AddExerciseScreen({ navigation }) {
   const [draft, setDraft] = useState(EMPTY_DRAFT);
   const [error, setError] = useState('');
   const [savedName, setSavedName] = useState('');
+  const [saving, setSaving] = useState(false);
 
   const update = (field, value) => {
     setDraft((current) => ({ ...current, [field]: value }));
@@ -30,16 +31,24 @@ export default function AddExerciseScreen({ navigation }) {
     if (savedName) setSavedName('');
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!draft.name.trim()) {
       setError('Vui lòng nhập tên bài tập.');
       return;
     }
 
-    const exercise = addExercise(draft);
+    setSaving(true);
 
-    setSavedName(exercise.name);
-    setDraft({ ...EMPTY_DRAFT, group: draft.group });
+    try {
+      const exercise = await addExercise(draft);
+
+      setSavedName(exercise.name);
+      setDraft({ ...EMPTY_DRAFT, group: draft.group });
+    } catch (requestError) {
+      setError(requestError.message ?? 'Không lưu được bài tập.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -145,11 +154,12 @@ export default function AddExerciseScreen({ navigation }) {
               testID="exercise-save"
               accessibilityRole="button"
               accessibilityLabel="Lưu bài tập"
+              disabled={saving}
               onPress={handleSave}
-              style={({ pressed }) => [styles.saveButton, pressed && styles.pressed]}
+              style={({ pressed }) => [styles.saveButton, (pressed || saving) && styles.pressed]}
             >
               <Ionicons name="save-outline" size={18} color={colors.background} />
-              <Text style={styles.saveLabel}>LƯU BÀI TẬP</Text>
+              <Text style={styles.saveLabel}>{saving ? 'ĐANG LƯU...' : 'LƯU BÀI TẬP'}</Text>
             </Pressable>
 
             <Pressable

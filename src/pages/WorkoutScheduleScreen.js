@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import Card from '../components/Card';
@@ -7,39 +7,59 @@ import { colors, spacing } from '../constants/theme';
 import { useWorkout } from '../contexts/WorkoutContext';
 import TabScreenLayout from '../layouts/TabScreenLayout';
 import { buildMonthMatrix, formatDateKey, monthTitle, shiftMonth, toDateKey, WEEKDAY_LABELS } from '../utils/date';
+import { formatClock } from '../utils/time';
 
 export default function WorkoutScheduleScreen({ navigation }) {
   const {
-    isWorkoutDay,
     stats,
     weekPlan,
     planById,
-    composePlanItemsForDate,
-    completedForDate,
-    logWorkoutToday,
+    scheduleForDay,
+    dayMarks,
+    refreshDayMarks,
+    sessionForDate,
+    loadSessionForDate,
   } = useWorkout();
 
   const today = new Date();
   const todayKey = toDateKey(today);
   const [cursor, setCursor] = useState({ year: today.getFullYear(), month: today.getMonth() + 1 });
   const [selectedDate, setSelectedDate] = useState(todayKey);
+  const [loadingSession, setLoadingSession] = useState(false);
 
   const weeks = buildMonthMatrix(cursor.year, cursor.month);
+
+  useEffect(() => {
+    const from = toDateKey(new Date(cursor.year, cursor.month - 1, 1));
+    const to = toDateKey(new Date(cursor.year, cursor.month, 0));
+
+    refreshDayMarks(from, to).catch(() => {});
+  }, [cursor, refreshDayMarks]);
+
+  const selectDate = useCallback(
+    async (dateKey) => {
+      setSelectedDate(dateKey);
+      setLoadingSession(true);
+
+      await loadSessionForDate(dateKey).catch(() => {});
+      setLoadingSession(false);
+    },
+    [loadSessionForDate],
+  );
 
   const goToMonth = (delta) => setCursor((current) => shiftMonth(current.year, current.month, delta));
 
   const selectedWeekday = new Date(`${selectedDate}T00:00:00`).getDay();
   const selectedPlan = planById(weekPlan[selectedWeekday]);
-  const selectedItems = composePlanItemsForDate(selectedDate);
-  const selectedCompleted = completedForDate(selectedDate);
-  const selectedPercent = selectedItems.length > 0
-    ? Math.round((selectedCompleted.length / selectedItems.length) * 100)
-    : 0;
+  const selectedEntry = scheduleForDay(selectedWeekday);
+  const selectedSession = sessionForDate(selectedDate);
+  const selectedMark = dayMarks[selectedDate];
 
-  const hasPlanOnDate = (dateKey) => Boolean(weekPlan[new Date(`${dateKey}T00:00:00`).getDay()]);
-
-  const openSession = (dateKey) =>
-    navigation.navigate('WorkoutSession', { dateKey, title: 'Chi tiết buổi tập' });
+  const openSession = () =>
+    navigation.navigate('WorkoutSession', {
+      dateKey: selectedDate,
+      title: selectedDate === todayKey ? 'Buổi tập hôm nay' : 'Buổi tập',
+    });
 
   const summaryTiles = [
     { key: 'streak', label: 'Chuỗi ngày', value: stats.streak },
@@ -105,8 +125,10 @@ export default function WorkoutScheduleScreen({ navigation }) {
               {week.map((cell, cellIndex) => {
                 if (!cell) return <View key={`blank-${weekIndex}-${cellIndex}`} style={styles.dayCell} />;
 
-                const trained = isWorkoutDay(cell.key);
-                const planned = hasPlanOnDate(cell.key);
+                const mark = dayMarks[cell.key];
+                const trained = Boolean(mark?.hasSession);
+                const inProgress = trained && !mark?.isCompleted;
+                const planned = Boolean(weekPlan[new Date(`${cell.key}T00:00:00`).getDay()]);
                 const isToday = cell.key === todayKey;
                 const isSelected = cell.key === selectedDate;
 
@@ -115,21 +137,28 @@ export default function WorkoutScheduleScreen({ navigation }) {
                     key={cell.key}
                     testID={`schedule-day-${cell.key}`}
                     accessibilityRole="button"
-                    accessibilityLabel={`${formatDateKey(cell.key)}${trained ? ' - đã tập' : ''}${planned ? ' - có buổi tập theo lịch' : ''}`}
-                    onPress={() => setSelectedDate(cell.key)}
+                    accessibilityLabel={`${formatDateKey(cell.key)}${trained ? ' - đã tập' : ''}${planned && !trained ? ' - có buổi tập theo lịch' : ''}`}
+                    onPress={() => selectDate(cell.key)}
                     style={styles.dayCell}
                   >
                     <View
                       style={[
                         styles.dayBadge,
                         trained && styles.dayBadgeTrained,
+                        inProgress && styles.dayBadgeInProgress,
                         isToday && styles.dayBadgeToday,
                         isSelected && !trained && styles.dayBadgeSelected,
                       ]}
                     >
                       <Text style={[styles.dayText, trained && styles.dayTextTrained]}>{cell.day}</Text>
                     </View>
-                    <View style={[styles.dot, trained && styles.dotTrained, !trained && planned && styles.dotPlanned]} />
+                    <View
+                      style={[
+                        styles.dot,
+                        trained && styles.dotTrained,
+                        !trained && planned && styles.dotPlanned,
+                      ]}
+                    />
                   </Pressable>
                 );
               })}
@@ -140,6 +169,10 @@ export default function WorkoutScheduleScreen({ navigation }) {
             <View style={styles.legendItem}>
               <View style={[styles.dayBadge, styles.dayBadgeTrained, styles.legendBadge]} />
               <Text style={styles.legendText}>Đã tập</Text>
+            </View>
+            <View style={styles.legendItem}>
+              <View style={[styles.dayBadge, styles.dayBadgeInProgress, styles.legendBadge]} />
+              <Text style={styles.legendText}>Chưa xong</Text>
             </View>
             <View style={styles.legendItem}>
               <View style={[styles.legendDot, styles.dotPlanned]} />
@@ -158,25 +191,66 @@ export default function WorkoutScheduleScreen({ navigation }) {
             {formatDateKey(selectedDate)}
           </Text>
 
-          <Text style={styles.selectedPlan}>
-            {selectedPlan ? `Buổi tập: ${selectedPlan.name}` : 'Ngày này chưa có buổi tập theo lịch tuần'}
+          <Text testID="schedule-selected-plan" style={styles.selectedPlan}>
+            {selectedPlan
+              ? `Buổi tập theo lịch: ${selectedPlan.name}`
+              : selectedEntry?.planName
+                ? `Buổi tập theo lịch: ${selectedEntry.planName}`
+                : 'Ngày này chưa có buổi tập theo lịch tuần'}
           </Text>
 
-          {selectedItems.length > 0 ? (
-            <Text testID="schedule-selected-progress" style={styles.selectedProgress}>
-              Hoàn thành {selectedCompleted.length}/{selectedItems.length} bài · {selectedPercent}%
+          {selectedSession ? (
+            <View testID="schedule-selected-session" style={styles.sessionBox}>
+              <Text style={styles.sessionTitle}>
+                {selectedSession.status === 'FINISHED' ? 'BUỔI TẬP ĐÃ KẾT THÚC' : 'BUỔI TẬP ĐANG DIỄN RA'}
+              </Text>
+              <Text style={styles.sessionMeta}>
+                {selectedSession.planName ?? 'Buổi tập tự chọn'} · {selectedSession.completedExercises}/
+                {selectedSession.totalExercises} bài · {selectedSession.progressPercent}%
+              </Text>
+              <Text style={styles.sessionMeta}>
+                Tập {formatClock(selectedSession.totalDurationSeconds)} · nghỉ{' '}
+                {formatClock(selectedSession.totalRestSeconds)} · tổng{' '}
+                {formatClock(selectedSession.totalDurationSeconds + selectedSession.totalRestSeconds)}
+              </Text>
+
+              {selectedSession.exercises.map((exercise, index) => (
+                <View key={exercise.id} style={styles.sessionExerciseRow}>
+                  <Ionicons
+                    name={exercise.isCompleted ? 'checkmark-circle' : 'ellipse-outline'}
+                    size={14}
+                    color={exercise.isCompleted ? colors.success : colors.icon}
+                  />
+                  <Text style={styles.sessionExerciseName}>
+                    {index + 1}. {exercise.name}
+                  </Text>
+                  <Text style={styles.sessionExerciseMeta}>
+                    {exercise.sets.length}/{exercise.targetSets} hiệp ·{' '}
+                    {formatClock(exercise.totalWorkSeconds)}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          ) : (
+            <Text testID="schedule-selected-empty" style={styles.selectedHint}>
+              {selectedMark?.hasSession
+                ? 'Đã có buổi tập trong ngày này.'
+                : 'Chưa có buổi tập nào trong ngày này.'}{' '}
+              {loadingSession ? 'Đang kiểm tra...' : ''}
             </Text>
-          ) : null}
+          )}
 
           <Pressable
             testID="schedule-open-session"
             accessibilityRole="button"
-            accessibilityLabel="Xem chi tiết buổi tập"
-            onPress={() => openSession(selectedDate)}
+            accessibilityLabel={selectedSession ? 'Xem chi tiết buổi tập' : 'Bắt đầu buổi tập'}
+            onPress={openSession}
             style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}
           >
             <Ionicons name="barbell-outline" size={18} color={colors.background} />
-            <Text style={styles.primaryLabel}>XEM CHI TIẾT BUỔI TẬP</Text>
+            <Text style={styles.primaryLabel}>
+              {selectedSession ? 'MỞ CHI TIẾT BUỘI TẬP' : 'BẮT ĐẦU BUỔI TẬP NGÀY NÀY'}
+            </Text>
           </Pressable>
 
           <Pressable
@@ -191,24 +265,10 @@ export default function WorkoutScheduleScreen({ navigation }) {
           </Pressable>
 
           <Pressable
-            testID="schedule-mark-today"
-            accessibilityRole="button"
-            accessibilityLabel="Đánh dấu hôm nay đã tập"
-            onPress={() => {
-              logWorkoutToday();
-              setSelectedDate(todayKey);
-            }}
-            style={({ pressed }) => [styles.ghostButton, pressed && styles.pressed]}
-          >
-            <Ionicons name="checkmark-circle-outline" size={18} color={colors.accent} />
-            <Text style={styles.ghostLabel}>ĐÁNH DẤU HÔM NAY ĐÃ TẬP</Text>
-          </Pressable>
-
-          <Pressable
             testID="schedule-home"
             accessibilityRole="button"
             accessibilityLabel="Về trang chủ"
-            onPress={() => navigation.navigate('Dashboard')}
+            onPress={() => navigation.popTo('Tabs', { screen: 'Dashboard' })}
             style={({ pressed }) => [styles.ghostButton, pressed && styles.pressed]}
           >
             <Ionicons name="home-outline" size={18} color={colors.accent} />
@@ -227,7 +287,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.page,
   },
   content: {
-    paddingBottom: 24,
+    paddingBottom: 32,
     paddingTop: 12,
   },
   summaryCard: {
@@ -318,82 +378,125 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent,
     borderColor: colors.accent,
   },
+  dayBadgeInProgress: {
+    backgroundColor: 'rgba(251, 191, 36, 0.18)',
+    borderColor: colors.warning,
+  },
   dayBadgeToday: {
-    borderColor: colors.text,
-    borderWidth: 1.5,
+    borderColor: colors.success,
+    borderWidth: 2,
   },
   dayBadgeSelected: {
+    backgroundColor: colors.accentSoft,
     borderColor: colors.accent,
   },
   dayText: {
     color: colors.muted,
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
   },
   dayTextTrained: {
     color: colors.background,
-    fontWeight: '900',
   },
   dot: {
+    backgroundColor: 'transparent',
     borderRadius: 999,
     height: 4,
     width: 4,
   },
   dotTrained: {
-    backgroundColor: colors.success,
+    backgroundColor: colors.accent,
   },
   dotPlanned: {
-    backgroundColor: colors.accent,
+    backgroundColor: colors.dim,
   },
   legendRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 14,
-    marginTop: 18,
+    marginTop: 14,
   },
   legendItem: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: 7,
+    gap: 6,
   },
   legendBadge: {
-    height: 18,
-    width: 18,
+    height: 16,
+    width: 16,
+    borderRadius: 6,
   },
   legendDot: {
     borderRadius: 999,
-    height: 6,
-    width: 6,
+    height: 8,
+    width: 8,
   },
   legendText: {
     color: colors.muted,
-    fontSize: 11,
+    fontSize: 10,
   },
   selectedCard: {
-    marginBottom: 8,
+    marginBottom: 14,
   },
   selectedLabel: {
     color: colors.dim,
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 9,
+    fontWeight: '900',
     letterSpacing: 1.6,
   },
   selectedDate: {
     color: colors.text,
     fontSize: 18,
     fontWeight: '900',
-    marginTop: 8,
+    marginTop: 4,
   },
   selectedPlan: {
-    color: colors.accent,
-    fontSize: 13,
-    fontWeight: '700',
-    marginTop: 10,
-  },
-  selectedProgress: {
     color: colors.muted,
     fontSize: 12,
+    marginTop: 6,
+  },
+  selectedHint: {
+    color: colors.dim,
+    fontSize: 11,
+    marginTop: 6,
+  },
+  sessionBox: {
+    backgroundColor: colors.surfaceAlt,
+    borderColor: colors.border,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginTop: 12,
+    padding: 12,
+  },
+  sessionTitle: {
+    color: colors.accent,
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 1.4,
+  },
+  sessionMeta: {
+    color: colors.muted,
+    fontSize: 11,
+    marginTop: 4,
+  },
+  sessionExerciseRow: {
+    alignItems: 'center',
+    borderTopColor: colors.border,
+    borderTopWidth: 1,
+    flexDirection: 'row',
+    gap: 8,
     marginTop: 8,
+    paddingTop: 8,
+  },
+  sessionExerciseName: {
+    color: colors.text,
+    flex: 1,
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  sessionExerciseMeta: {
+    color: colors.dim,
+    fontSize: 10,
   },
   primaryButton: {
     alignItems: 'center',
@@ -402,38 +505,35 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
     justifyContent: 'center',
-    marginTop: 16,
-    paddingVertical: 15,
+    marginTop: 14,
+    paddingVertical: 13,
   },
   primaryLabel: {
     color: colors.background,
     fontSize: 12,
     fontWeight: '900',
-    letterSpacing: 1.1,
+    letterSpacing: 0.5,
   },
   ghostButton: {
     alignItems: 'center',
-    borderColor: colors.inputBorder,
+    borderColor: colors.border,
     borderRadius: 14,
     borderWidth: 1,
     flexDirection: 'row',
     gap: 8,
     justifyContent: 'center',
     marginTop: 10,
-    paddingVertical: 14,
+    paddingVertical: 12,
   },
   ghostLabel: {
     color: colors.accent,
     fontSize: 11,
-    fontWeight: '900',
-    letterSpacing: 1.1,
+    fontWeight: '800',
   },
   footer: {
     color: colors.dim,
     fontSize: 9,
-    fontWeight: '700',
-    letterSpacing: 1.6,
-    paddingTop: 14,
+    letterSpacing: 1.4,
     textAlign: 'center',
   },
 });
