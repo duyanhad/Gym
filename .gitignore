@@ -43,3 +43,6 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# Không dùng README (chặn không cho đưa vào repo)
+README.md
