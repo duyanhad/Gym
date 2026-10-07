@@ -49,4 +49,12 @@ async function submitLogin(page, { username = 'admin', password = 'Admin@123' } 
   await page.getByTestId('login-submit').click();
 }
 
-module.exports = { API_LOGIN, demoUser, mockLoginSuccess, mockLoginFailure, submitLogin };
+/** Vào app với backend đã được giả lập thành công (dùng cho test các màn hình sau đăng nhập). */
+async function loginAs(page, user = demoUser) {
+  await mockLoginSuccess(page, user);
+  await page.goto('/');
+  await submitLogin(page, { username: user.username, password: 'Admin@123' });
+  await page.getByTestId('dashboard-screen').waitFor();
+}
+
+module.exports = { API_LOGIN, demoUser, mockLoginSuccess, mockLoginFailure, submitLogin, loginAs };

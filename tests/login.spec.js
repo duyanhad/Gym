@@ -35,13 +35,14 @@ test('điền nhanh tài khoản demo', async ({ page }) => {
   await expect(page.getByTestId('login-password')).toHaveValue('Reception@123');
 });
 
-test('đăng nhập thành công thì vào trang chủ và đăng xuất được', async ({ page }) => {
+test('đăng nhập thành công thì vào trang tổng quan và đăng xuất được', async ({ page }) => {
   await mockLoginSuccess(page);
 
   await submitLogin(page);
-  await expect(page.getByText('KẾ HOẠCH CỦA BẠN')).toBeVisible();
-  await expect(page.getByText('QUẢN TRỊ HỆ THỐNG')).toBeVisible();
 
-  await page.getByTestId('logout-button').click();
+  await expect(page.getByTestId('dashboard-screen')).toBeVisible();
+  await expect(page.getByText('Quản trị hệ thống')).toBeVisible();
+
+  await page.getByTestId('dashboard-logout').click();
   await expect(page.getByTestId('login-submit')).toBeVisible();
 });
